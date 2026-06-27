@@ -65,6 +65,11 @@ but *how the whole distribution of outcomes differs*, regime by regime.
 
 ---
 
+[View Presentation (PDF)](Options_strategy_wheel_vs_Buy_paper_from_kkmf.pdf) (PL)
+[View code (python notebook)](PL_wheel_strategy_risk_analysis_mc.ipynb) (PL)
+
+---
+
 ## What the Wheel is
 
 The Wheel is a cyclical, rules-based strategy that alternates between selling cash-secured
@@ -117,7 +122,7 @@ way: a matrix of standard-normal shocks is drawn once and turned into prices wit
 cumulative product, so a 10,000-path scenario is one NumPy operation rather than a Python
 loop.
 
-![Simulated price paths for the three regimes](assets/path_simulations.png)
+![Simulated price paths for the three regimes](path_simulations.png)
 
 *A sample of GBM paths in each regime, with the median and the 10th–90th percentile band.
 The bull market drifts up with a fanning cone of outcomes; the bear market drifts down under
@@ -216,7 +221,7 @@ regime). The pattern is consistent: the Wheel improves the risk profile in every
 improves *mean wealth* in the bear and sideways regimes — its cost is concentrated entirely
 in the strong bull, where it caps the upside.
 
-![Distribution of terminal portfolio values, Wheel vs Buy & Hold](assets/terminal_value_distributions.png)
+![Distribution of terminal portfolio values, Wheel vs Buy & Hold](terminal_value_distributions.png)
 
 *Top row: histograms of terminal portfolio value (the dashed line is starting capital).
 Bottom row: the same outcomes as empirical CDFs. The Wheel's distribution is consistently
@@ -332,25 +337,6 @@ Several of these (no costs, perfect liquidity, thin tails) point the same way: t
 Wheel look better than it would in practice. The qualitative story — premium selling trades
 upside for a defensive, lower-variance payoff — is robust to all of them; the precise
 out-performance figures are not.
-
----
-
-## Repository structure
-
-```
-.
-├── PL_wheel_strategy_risk_analysis_mc.ipynb   # the full study: GBM, Black–Scholes,
-│                                              # the Wheel engine, metrics, and figures
-├── assets/
-│   ├── path_simulations.png                   # sample GBM paths per regime
-│   └── terminal_value_distributions.png       # histograms + CDFs of terminal wealth
-└── README.md
-```
-
-The notebook is organised in clearly delimited blocks: GBM path generation → Black–Scholes
-pricing and the analytical strike → trailing-volatility / VRP → the Buy & Hold and Wheel
-simulators → the metrics module → the comparison tables and plots. Running it end to end
-also writes a combined comparison figure (`wheel_vs_bh.png`).
 
 ---
 
