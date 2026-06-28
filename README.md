@@ -23,6 +23,8 @@ for **managing volatility**, not for chasing return.
 > This project was presented at the **14th Kraków Conference on Financial Mathematics**
 > (*XIV Krakowska Konferencja Matematyki Finansowej*), 9 May 2026.
 
+**[▶ Live app](https://wheel-strategy-montecarlo.streamlit.app/)** · [Conference paper — PDF (Polish)](Options_strategy_wheel_vs_Buy_paper_from_kkmf.pdf) · [Research notebook — Jupyter (Polish)](PL_wheel_strategy_risk_analysis_mc.ipynb)
+
 ---
 
 ## Table of contents
@@ -30,11 +32,6 @@ for **managing volatility**, not for chasing return.
 - [Motivation](#motivation)
 - [What the Wheel is](#what-the-wheel-is)
 - [Methodology](#methodology)
-  - [Market model: geometric Brownian motion](#market-model-geometric-brownian-motion)
-  - [The three regimes](#the-three-regimes)
-  - [Monte Carlo design](#monte-carlo-design)
-  - [Option pricing and the analytical strike](#option-pricing-and-the-analytical-strike)
-  - [Implied volatility and the volatility risk premium](#implied-volatility-and-the-volatility-risk-premium)
 - [Performance and risk metrics](#performance-and-risk-metrics)
 - [Results](#results)
 - [Key findings](#key-findings)
@@ -68,11 +65,6 @@ but *how the whole distribution of outcomes differs*, regime by regime.
 
 ---
 
-[View Presentation (PDF)](Options_strategy_wheel_vs_Buy_paper_from_kkmf.pdf) (PL)
-[View code (python notebook)](PL_wheel_strategy_risk_analysis_mc.ipynb) (PL)
-
----
-
 ## What the Wheel is
 
 The Wheel is a cyclical, rules-based strategy that alternates between selling cash-secured
@@ -98,7 +90,7 @@ discretion:
   fixes how aggressively the strategy reaches for premium versus how often it gets assigned.
 - **Tenor.** Every option is **21 observation steps** to expiry, then rolled.
 - **Cost-basis protection on the call leg.** When selling the covered call, the strike is
-  set to `K = max(K_assigned, K_Δ)` — never below the price at which the shares were
+  set to $K = \max(K_{\text{assigned}}, K_\Delta)$ — never below the price at which the shares were
   acquired. This stops the strategy from being forced to sell its stock at a loss just to
   collect a call premium.
 
@@ -110,17 +102,17 @@ discretion:
 
 Each price path is a geometric Brownian motion (GBM). The asset follows
 
-```
-dS_t = μ S_t dt + σ S_t dW_t
-```
+$$
+dS_t = \mu S_t \, dt + \sigma S_t \, dW_t
+$$
 
 which is simulated with the exact log-Euler discretisation (no discretisation bias):
 
-```
-S_{t+Δt} = S_t · exp[ (μ − ½σ²)·Δt + σ·√Δt · Z ],   Z ~ N(0, 1)
-```
+$$
+S_{t+\Delta t} = S_t \cdot \exp\!\left[\left(\mu - \tfrac{1}{2}\sigma^2\right)\Delta t + \sigma\sqrt{\Delta t}\; Z\right], \quad Z \sim \mathcal{N}(0, 1)
+$$
 
-with `Δt = 1/252` (252 trading days per year). Paths are generated in a fully vectorised
+with $\Delta t = 1/252$ (252 trading days per year). Paths are generated in a fully vectorised
 way: a matrix of standard-normal shocks is drawn once and turned into prices with a single
 cumulative product, so a 10,000-path scenario is one NumPy operation rather than a Python
 loop.
@@ -164,13 +156,16 @@ chosen to span qualitatively different environments and stress the strategy in e
 
 Options are priced with the **Black–Scholes** model for European puts and calls. Rather than
 searching numerically for the strike that yields a 0.30-delta option, the code **inverts the
-delta in closed form**. Because a call's delta is `N(d₁)`, a target delta pins down `d₁`
+delta in closed form**. Because a call's delta is $N(d_1)$, a target delta pins down $d_1$
 directly, and the strike follows analytically:
 
-```
-d₁ = N⁻¹(Δ_call)
-K  = S · exp[ −d₁·σ·√T + (r + ½σ²)·T ]
-```
+$$
+d_1 = N^{-1}(\Delta_{\text{call}})
+$$
+
+$$
+K = S \cdot \exp\!\left[-d_1\,\sigma\sqrt{T} + \left(r + \tfrac{1}{2}\sigma^2\right)T\right]
+$$
 
 This gives the exact target-delta strike in one step, with no root-finding — a small but
 clean efficiency that keeps the per-path inner loop fast.
@@ -181,9 +176,9 @@ The premium a seller collects depends entirely on the implied volatility used to
 option. Here, implied volatility is modelled as the asset's **trailing 21-day realised
 volatility plus a constant 2% (200 bps) volatility risk premium**:
 
-```
-IV_t = σ_realised, 21d (annualised) + 2%
-```
+$$
+\text{IV}_t = \sigma_{\text{realised},\,21\text{d}}\ (\text{annualised}) + 2\%
+$$
 
 The 2% spread is the structural edge the Wheel is designed to harvest: it represents the
 market reality that option sellers are, on average, paid slightly more than the volatility
@@ -200,7 +195,7 @@ Two of them — Sharpe and CVaR — therefore describe the *dispersion of outcom
 read in that spirit.
 
 - **CAGR** — the compound annual growth rate implied by the *mean* terminal value:
-  `(mean(V_T) / V_0)^(1/years) − 1`.
+  $\left(\text{mean}(V_T)/V_0\right)^{1/\text{years}} - 1$.
 - **Average maximum drawdown (Avg MDD)** — for each path, the deepest peak-to-trough decline
   of the daily mark-to-market equity curve is measured against a running peak; these per-path
   drawdowns are then averaged. (An earlier, cross-sectional approximation was replaced with
@@ -355,19 +350,15 @@ Options-Wheel-vs.-Buy-Hold-Monte-Carlo-Strategy-Comparison/
 └── Options_strategy_wheel_vs_Buy_paper_from_kkmf.pdf  ← Conference paper (Polish)
 ```
 
-`app.py` and `simulation.py` must be in the repository **root** (not inside a subfolder)
-for the deployment options below to work without configuration changes.
+`app.py` and `simulation.py` live in the repository **root**, so the app runs — locally or on Streamlit Community Cloud — without any extra configuration.
 
 ---
 
 ## Interactive app
 
-The Streamlit app is the recommended way to explore the simulation. It exposes every
-parameter — drift, volatility, volatility risk premium, option delta, number of paths — as
-sidebar controls, runs the simulation on demand, and renders the metrics table and
-distribution charts in a browser.
+The app is live at **[wheel-strategy-montecarlo.streamlit.app](https://wheel-strategy-montecarlo.streamlit.app/)** — no setup required. It exposes every parameter — drift, volatility, volatility risk premium, option delta, number of paths — as sidebar controls, runs the simulation on demand, and renders the metrics table and distribution charts in the browser.
 
-### Run locally
+To run it locally instead:
 
 ```bash
 git clone https://github.com/karolkudlacik/Options-Wheel-vs.-Buy-Hold-Monte-Carlo-Strategy-Comparison.git
@@ -376,56 +367,24 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Opens at `http://localhost:8501`. Choose a scenario preset or switch to Custom to set μ and
-σ freely, then click **Run Simulation**. Results are cached — re-running with the same
-parameters is instant.
-
-### Deploy a permanent live link (Streamlit Community Cloud — free)
-
-1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
-2. Click **Create app** → set repository, branch `main`, main file `app.py`.
-3. Click **Deploy**. The app gets a `https://<name>.streamlit.app` URL in a few minutes.
-
-Every `git push` to `main` redeploys automatically.
-
-### Run in Google Colab (no local setup)
-
-Upload `app.py` and `simulation.py` to the Colab session, then run two cells:
-
-```python
-# Cell 1 — install dependencies
-!pip install -q streamlit
-!npm install -q localtunnel
-```
-
-```python
-# Cell 2 — start the app (the printed IP is the tunnel password)
-!wget -q -O - ipv4.icanhazip.com
-!streamlit run app.py &>/content/logs.txt & npx localtunnel --port 8501
-```
-
-Click the `https://….loca.lt` URL in the output and enter the printed IP as the password.
-The link is temporary and only works while the notebook session is active.
+Choose a scenario preset or switch to Custom to set μ and σ freely, then click **Run Simulation**; results are cached, so re-running with the same parameters is instant.
 
 ---
 
 ## Reproducing the study
 
-**Via the Streamlit app** (recommended): run the app as described above, select a scenario
-preset, and click **Run Simulation**. The fixed random seed makes every result exactly
-reproducible regardless of the parameter chosen.
-
-**Via the original notebook**: requires Python 3 with `numpy`, `scipy`, and `matplotlib`.
+For interactive exploration, use the [live app](#interactive-app) — the fixed random seed
+makes every run reproducible. To reproduce the exact numbers and figures in this README, run
+the original research notebook (Python 3 with `numpy`, `scipy`, `matplotlib`):
 
 ```bash
 pip install numpy scipy matplotlib jupyter
 jupyter notebook PL_wheel_strategy_risk_analysis_mc.ipynb
 ```
 
-Run the cells top to bottom. With the fixed random seed, the printed metric tables and the
-saved figures reproduce the numbers in this README exactly. Re-parameterising the regimes
-(drift, volatility, horizon) or the strategy (target delta, tenor) is a matter of editing the
-scenario dictionary and the strategy constants near the top.
+Run the cells top to bottom. Re-parameterising the regimes (drift, volatility, horizon) or
+the strategy (target delta, tenor) is a matter of editing the scenario dictionary and the
+strategy constants near the top.
 
 ---
 
