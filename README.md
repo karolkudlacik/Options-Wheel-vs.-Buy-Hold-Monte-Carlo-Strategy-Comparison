@@ -6,7 +6,7 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-app-FF4B4B?logo=streamlit&logoColor=white)
 ![Paths](https://img.shields.io/badge/Monte%20Carlo-10%2C000%20paths%20%C3%97%203%20regimes-555)
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app.streamlit.app)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://wheel-strategy-montecarlo.streamlit.app/)
 
 A simulation study that asks a simple question: **does systematically selling option
 premium (the "Wheel") actually beat just holding the asset?** Both strategies are run on
@@ -346,7 +346,7 @@ out-performance figures are not.
 ## Repository structure
 
 ```
-your-repo/
+Options-Wheel-vs.-Buy-Hold-Monte-Carlo-Strategy-Comparison/
 ├── app.py                                        ← Streamlit UI (sidebar, charts, metrics table)
 ├── simulation.py                                 ← All mathematical logic (GBM, Black–Scholes, Wheel, metrics)
 ├── requirements.txt                              ← Python dependencies
@@ -370,8 +370,8 @@ distribution charts in a browser.
 ### Run locally
 
 ```bash
-git clone https://github.com/<your-username>/<your-repo>.git
-cd <your-repo>
+git clone https://github.com/karolkudlacik/Options-Wheel-vs.-Buy-Hold-Monte-Carlo-Strategy-Comparison.git
+cd Options-Wheel-vs.-Buy-Hold-Monte-Carlo-Strategy-Comparison
 pip install -r requirements.txt
 streamlit run app.py
 ```
@@ -386,8 +386,7 @@ parameters is instant.
 2. Click **Create app** → set repository, branch `main`, main file `app.py`.
 3. Click **Deploy**. The app gets a `https://<name>.streamlit.app` URL in a few minutes.
 
-Every `git push` to `main` redeploys automatically. Once deployed, replace the badge URL
-at the top of this file with your actual app link.
+Every `git push` to `main` redeploys automatically.
 
 ### Run in Google Colab (no local setup)
 
