@@ -3,8 +3,10 @@
 ![Python](https://img.shields.io/badge/Python-3.x-3776AB?logo=python&logoColor=white)
 ![NumPy](https://img.shields.io/badge/NumPy-vectorised-013243?logo=numpy&logoColor=white)
 ![SciPy](https://img.shields.io/badge/SciPy-Black--Scholes-8CAAE6?logo=scipy&logoColor=white)
-![Matplotlib](https://img.shields.io/badge/Matplotlib-figures-11557C)
+![Streamlit](https://img.shields.io/badge/Streamlit-app-FF4B4B?logo=streamlit&logoColor=white)
 ![Paths](https://img.shields.io/badge/Monte%20Carlo-10%2C000%20paths%20%C3%97%203%20regimes-555)
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app.streamlit.app)
 
 A simulation study that asks a simple question: **does systematically selling option
 premium (the "Wheel") actually beat just holding the asset?** Both strategies are run on
@@ -38,6 +40,7 @@ for **managing volatility**, not for chasing return.
 - [Key findings](#key-findings)
 - [Assumptions and limitations](#assumptions-and-limitations)
 - [Repository structure](#repository-structure)
+- [Interactive app](#interactive-app)
 - [Reproducing the study](#reproducing-the-study)
 - [Reading the results responsibly](#reading-the-results-responsibly)
 
@@ -340,9 +343,80 @@ out-performance figures are not.
 
 ---
 
+## Repository structure
+
+```
+your-repo/
+├── app.py                                        ← Streamlit UI (sidebar, charts, metrics table)
+├── simulation.py                                 ← All mathematical logic (GBM, Black–Scholes, Wheel, metrics)
+├── requirements.txt                              ← Python dependencies
+├── README.md
+├── PL_wheel_strategy_risk_analysis_mc.ipynb      ← Original research notebook (Polish)
+└── Options_strategy_wheel_vs_Buy_paper_from_kkmf.pdf  ← Conference paper (Polish)
+```
+
+`app.py` and `simulation.py` must be in the repository **root** (not inside a subfolder)
+for the deployment options below to work without configuration changes.
+
+---
+
+## Interactive app
+
+The Streamlit app is the recommended way to explore the simulation. It exposes every
+parameter — drift, volatility, volatility risk premium, option delta, number of paths — as
+sidebar controls, runs the simulation on demand, and renders the metrics table and
+distribution charts in a browser.
+
+### Run locally
+
+```bash
+git clone https://github.com/<your-username>/<your-repo>.git
+cd <your-repo>
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Opens at `http://localhost:8501`. Choose a scenario preset or switch to Custom to set μ and
+σ freely, then click **Run Simulation**. Results are cached — re-running with the same
+parameters is instant.
+
+### Deploy a permanent live link (Streamlit Community Cloud — free)
+
+1. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
+2. Click **Create app** → set repository, branch `main`, main file `app.py`.
+3. Click **Deploy**. The app gets a `https://<name>.streamlit.app` URL in a few minutes.
+
+Every `git push` to `main` redeploys automatically. Once deployed, replace the badge URL
+at the top of this file with your actual app link.
+
+### Run in Google Colab (no local setup)
+
+Upload `app.py` and `simulation.py` to the Colab session, then run two cells:
+
+```python
+# Cell 1 — install dependencies
+!pip install -q streamlit
+!npm install -q localtunnel
+```
+
+```python
+# Cell 2 — start the app (the printed IP is the tunnel password)
+!wget -q -O - ipv4.icanhazip.com
+!streamlit run app.py &>/content/logs.txt & npx localtunnel --port 8501
+```
+
+Click the `https://….loca.lt` URL in the output and enter the printed IP as the password.
+The link is temporary and only works while the notebook session is active.
+
+---
+
 ## Reproducing the study
 
-Requirements: Python 3, with `numpy`, `scipy`, and `matplotlib`.
+**Via the Streamlit app** (recommended): run the app as described above, select a scenario
+preset, and click **Run Simulation**. The fixed random seed makes every result exactly
+reproducible regardless of the parameter chosen.
+
+**Via the original notebook**: requires Python 3 with `numpy`, `scipy`, and `matplotlib`.
 
 ```bash
 pip install numpy scipy matplotlib jupyter
