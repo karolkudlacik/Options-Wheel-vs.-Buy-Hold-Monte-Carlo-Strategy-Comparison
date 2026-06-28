@@ -109,7 +109,7 @@ $$
 which is simulated with the exact log-Euler discretisation (no discretisation bias):
 
 $$
-S_{t+\Delta t} = S_t \cdot \exp\!\left[\left(\mu - \tfrac{1}{2}\sigma^2\right)\Delta t + \sigma\sqrt{\Delta t}\; Z\right], \quad Z \sim \mathcal{N}(0, 1)
+S_{t+\Delta t} = S_t \cdot \exp\left[\left(\mu - \tfrac{1}{2}\sigma^2\right)\Delta t + \sigma\sqrt{\Delta t} \cdot Z\right], \quad Z \sim \mathcal{N}(0,1)
 $$
 
 with $\Delta t = 1/252$ (252 trading days per year). Paths are generated in a fully vectorised
@@ -164,7 +164,7 @@ d_1 = N^{-1}(\Delta_{\text{call}})
 $$
 
 $$
-K = S \cdot \exp\!\left[-d_1\,\sigma\sqrt{T} + \left(r + \tfrac{1}{2}\sigma^2\right)T\right]
+K = S \cdot \exp\left[-d_1 \cdot \sigma\sqrt{T} + \left(r + \tfrac{1}{2}\sigma^2\right)T\right]
 $$
 
 This gives the exact target-delta strike in one step, with no root-finding — a small but
