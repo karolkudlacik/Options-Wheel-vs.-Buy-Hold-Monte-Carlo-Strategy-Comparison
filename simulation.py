@@ -82,6 +82,59 @@ def find_strike(S, T, r, sigma, target_delta, option="put"):
 
 
 # ─────────────────────────────────────────────────────────────
+# BLOCK 2b — VOLATILITY SKEW (static, log-moneyness parametrisation)
+#
+# Equity index options do not trade at a single flat volatility: OTM puts
+# carry higher implied vol than equidistant OTM calls (the "skew" / "smirk"),
+# driven by the leverage effect and structural demand for downside hedges.
+#
+# We use a deliberately simple *static* parametrisation in log-moneyness:
+#
+#     sigma(K) = sigma_atm - slope * ln(K/S) + curvature * ln(K/S)^2
+#
+#     slope > 0     -> lower strikes (OTM puts) get HIGHER vol,
+#                      higher strikes (OTM calls) get lower vol
+#     curvature > 0 -> lifts both wings (the "smile")
+#
+# Scope / limitations (kept intentionally): this is a pricing-layer
+# approximation only. The GBM paths are still generated at a single flat
+# volatility, and the skew parameters are stylized (typical equity-index
+# magnitudes), not calibrated to market data.
+# ─────────────────────────────────────────────────────────────
+
+VOL_FLOOR = 0.01   # numerical floor so extreme parameters cannot push vol <= 0
+
+
+def skewed_vol(sigma_atm, S, K, skew_slope=0.0, smile_curvature=0.0):
+    """Implied volatility at strike K under the static skew/smile model."""
+    m   = np.log(K / S)
+    vol = sigma_atm - skew_slope * m + smile_curvature * m**2
+    return max(vol, VOL_FLOOR)
+
+
+def find_strike_skewed(S, T, r, sigma_atm, target_delta, option="put",
+                       skew_slope=0.0, smile_curvature=0.0, n_iter=5):
+    """
+    Strike for a target |delta| when vol depends on the strike itself.
+
+    The strike-for-delta and the vol-at-that-strike depend on each other,
+    so we solve the fixed point with a few iterations (convergence is
+    geometric; 5 iterations leave a delta residual below ~1e-6 even for
+    steep skews). With zero skew this reduces exactly to ``find_strike``.
+
+    Returns
+    -------
+    (K, sigma_K) : the strike and the skew-adjusted vol at that strike
+    """
+    K = find_strike(S, T, r, sigma_atm, target_delta, option)
+    for _ in range(n_iter):
+        sigma_K = skewed_vol(sigma_atm, S, K, skew_slope, smile_curvature)
+        K       = find_strike(S, T, r, sigma_K, target_delta, option)
+    sigma_K = skewed_vol(sigma_atm, S, K, skew_slope, smile_curvature)
+    return K, sigma_K
+
+
+# ─────────────────────────────────────────────────────────────
 # BLOCK 3 — IMPLIED VOLATILITY (rolling 21-day realized vol + VRP)
 # ─────────────────────────────────────────────────────────────
 
@@ -129,7 +182,11 @@ def simulate_bh(price_path, start_day=START_DAY, initial=INITIAL_CAPITAL):
 
 def simulate_wheel(price_path, iv_path, r=R, target_delta=TARGET_DELTA,
                    option_days=OPTION_DAYS, start_day=START_DAY,
-                   contract_size=CONTRACT_SIZE, initial=INITIAL_CAPITAL):
+                   contract_size=CONTRACT_SIZE, initial=INITIAL_CAPITAL,
+                   skew_slope=0.0, smile_curvature=0.0):
+    # skew_slope / smile_curvature parametrise the static volatility skew
+    # (see BLOCK 2b). With both at 0.0 the behaviour is identical to the
+    # original flat-vol version.
     cash       = float(initial)
     shares     = 0
     K_assigned = None
@@ -144,7 +201,8 @@ def simulate_wheel(price_path, iv_path, r=R, target_delta=TARGET_DELTA,
         sigma = iv_path[day]
 
         if state == "PUT":
-            K           = find_strike(S, T_exp, r, sigma, target_delta, "put")
+            K, sigma_K  = find_strike_skewed(S, T_exp, r, sigma, target_delta, "put",
+                                             skew_slope, smile_curvature)
             n_contracts = int(cash / (K * contract_size))
 
             if n_contracts <= 0:
@@ -153,29 +211,34 @@ def simulate_wheel(price_path, iv_path, r=R, target_delta=TARGET_DELTA,
                     history.append(cash + shares * price_path[d])
                 break
 
-            premium  = bs_price(S, K, T_exp, r, sigma, "put") * contract_size * n_contracts
+            premium  = bs_price(S, K, T_exp, r, sigma_K, "put") * contract_size * n_contracts
             cash    += premium
 
         else:  # state == "CALL"
-            K_delta     = find_strike(S, T_exp, r, sigma, target_delta, "call")
+            K_delta, _  = find_strike_skewed(S, T_exp, r, sigma, target_delta, "call",
+                                             skew_slope, smile_curvature)
             K           = max(K_assigned, K_delta)
+            # Price at the vol of the strike actually written (K may be the
+            # assigned strike, not the delta-targeted one).
+            sigma_K     = skewed_vol(sigma, S, K, skew_slope, smile_curvature)
             n_contracts = int(shares // contract_size)
 
             if n_contracts <= 0:
                 # FIX: instead of `continue` (risk of an infinite loop), immediately
                 # switch to writing a PUT on the same day.
                 state = "PUT"
-                K           = find_strike(S, T_exp, r, sigma, target_delta, "put")
+                K, sigma_K  = find_strike_skewed(S, T_exp, r, sigma, target_delta, "put",
+                                                 skew_slope, smile_curvature)
                 n_contracts = int(cash / (K * contract_size))
                 if n_contracts <= 0:
                     for d in range(day, total_days + 1):
                         history.append(cash + shares * price_path[d])
                     break
-                premium  = bs_price(S, K, T_exp, r, sigma, "put") * contract_size * n_contracts
+                premium  = bs_price(S, K, T_exp, r, sigma_K, "put") * contract_size * n_contracts
                 cash    += premium
 
             else:
-                premium  = bs_price(S, K, T_exp, r, sigma, "call") * contract_size * n_contracts
+                premium  = bs_price(S, K, T_exp, r, sigma_K, "call") * contract_size * n_contracts
                 cash    += premium
 
         expiry_day = min(day + option_days, total_days)

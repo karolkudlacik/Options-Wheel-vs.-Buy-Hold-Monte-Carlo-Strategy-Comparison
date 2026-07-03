@@ -168,7 +168,9 @@ K = S \cdot \exp\left[-d_1 \cdot \sigma\sqrt{T} + \left(r + \tfrac{1}{2}\sigma^2
 $$
 
 This gives the exact target-delta strike in one step, with no root-finding — a small but
-clean efficiency that keeps the per-path inner loop fast.
+clean efficiency that keeps the per-path inner loop fast. (When the volatility skew below is
+enabled, the strike and its volatility depend on each other, so this closed form is applied
+inside a short fixed-point iteration — see the next-but-one subsection.)
 
 ### Implied volatility and the volatility risk premium
 
@@ -184,6 +186,42 @@ The 2% spread is the structural edge the Wheel is designed to harvest: it repres
 market reality that option sellers are, on average, paid slightly more than the volatility
 that ultimately materialises. Modelling it as a constant additive spread is a deliberate
 simplification (see [limitations](#assumptions-and-limitations)).
+
+### Volatility skew (the smile)
+
+Black–Scholes assumes one flat volatility across all strikes. Listed equity index options do
+not trade that way: out-of-the-money puts are systematically priced at a **higher** implied
+volatility than equidistant out-of-the-money calls — the volatility *skew* (or "smirk") —
+driven by the leverage effect (falling prices coincide with rising volatility) and by
+structural institutional demand for downside protection.
+
+The app reproduces this with a deliberately simple **static parametrisation in
+log-moneyness**, applied at the option-pricing step:
+
+$$
+\sigma(K) = \sigma_{\text{ATM}} - b \ln(K/S) + c \ln(K/S)^2
+$$
+
+A positive slope $b$ makes lower strikes (OTM puts) richer and higher strikes (OTM calls)
+cheaper; a positive curvature $c$ lifts both wings into a smile. Because the target-delta
+strike and the volatility *at* that strike now depend on each other, the two are solved
+jointly with a short fixed-point iteration around the closed-form strike above (convergence
+is geometric; five iterations leave a delta residual below ~10⁻⁶ even for steep skews).
+
+Two honest boundaries of this approach:
+
+- **It is a pricing-layer approximation only.** Price paths are still generated at a single
+  flat volatility; the skew changes what the strategy is *paid*, not how the market *moves*.
+  A full stochastic-volatility treatment (e.g. Heston), where the smile emerges from the
+  dynamics itself, is out of scope by design.
+- **The parameters are stylised, not calibrated.** The default slope and curvature are set
+  to typical equity-index magnitudes (a few volatility points across the 25-delta wings),
+  not fitted to any specific day's option chain.
+
+For the Wheel the first-order effect is intuitive: the cash-secured puts it sells (struck
+below spot) collect a somewhat richer premium, while the covered calls (struck above spot)
+collect a somewhat poorer one. The sidebar toggle **Enable volatility skew** switches the
+mechanism off entirely, restoring the flat-vol baseline used in the notebook.
 
 ---
 
@@ -215,7 +253,10 @@ A Sortino ratio (downside-deviation analogue of Sharpe) is also computed in the 
 ## Results
 
 Metrics below are reproduced directly from the notebook (fixed seed, 10,000 paths per
-regime). The pattern is consistent: the Wheel improves the risk profile in every regime, and
+regime) and represent the **flat-volatility baseline** — the configuration presented at the
+conference. The volatility skew is an app-side extension: with the sidebar toggle switched
+off, the app reproduces this baseline exactly. The pattern is consistent: the Wheel improves
+the risk profile in every regime, and
 improves *mean wealth* in the bear and sideways regimes — its cost is concentrated entirely
 in the strong bull, where it caps the upside.
 
@@ -322,6 +363,11 @@ caveats matter as much as the headline numbers:
   and can be assigned early, making exercise path-dependent.
 - **A constant additive VRP.** The 2% volatility risk premium is held fixed. Real VRP is
   time-varying and regime-dependent — it can spike in crises and occasionally invert.
+- **The skew is static and stylised (app extension).** When enabled, the skew is a fixed
+  function of log-moneyness applied only at the pricing step. Real skew is dynamic — it
+  steepens in sell-offs — varies with tenor, and under a stochastic-volatility model would
+  interact with the path dynamics themselves. Its parameters are typical equity-index
+  magnitudes, not calibrated to market data.
 - **No dividends; a single underlying; a single, fixed parameter set.** Delta (0.30) and
   tenor (21 steps) are fixed rather than optimised, and this is not a sensitivity sweep —
   results are conditional on these specific choices.
@@ -356,7 +402,7 @@ Options-Wheel-vs.-Buy-Hold-Monte-Carlo-Strategy-Comparison/
 
 ## Interactive app
 
-The app is live at **[wheel-strategy-montecarlo.streamlit.app](https://wheel-strategy-montecarlo.streamlit.app/)** — no setup required. It exposes every parameter — drift, volatility, volatility risk premium, option delta, number of paths — as sidebar controls, runs the simulation on demand, and renders the metrics table and distribution charts in the browser.
+The app is live at **[wheel-strategy-montecarlo.streamlit.app](https://wheel-strategy-montecarlo.streamlit.app/)** — no setup required. It exposes every parameter — drift, volatility, volatility risk premium, option delta, the volatility-skew slope and curvature, number of paths — as sidebar controls, runs the simulation on demand, and renders the metrics table and distribution charts in the browser.
 
 To run it locally instead:
 
@@ -369,12 +415,26 @@ streamlit run app.py
 
 Choose a scenario preset or switch to Custom to set μ and σ freely, then click **Run Simulation**; results are cached, so re-running with the same parameters is instant.
 
+Beyond the metrics table and the distribution charts, the app renders:
+
+- **A live implied-volatility smile** — σ(K) across moneyness for the current sidebar
+  settings, drawn against the flat Black–Scholes line. It updates instantly as the skew
+  sliders move, before any simulation runs.
+- **Portfolio value over time** — the median path with a 10th–90th percentile band for the
+  Wheel and Buy & Hold, showing *when* along the horizon the two strategies diverge, not
+  just where they end up.
+
+Toggling **Enable volatility skew** off reverts the pricing to the flat-vol baseline used in
+the notebook and in the [Results](#results) above, which makes the flat-vs-skew comparison a
+one-click experiment.
+
 ---
 
 ## Reproducing the study
 
 For interactive exploration, use the [live app](#interactive-app) — the fixed random seed
-makes every run reproducible. To reproduce the exact numbers and figures in this README, run
+makes every run reproducible, and switching **Enable volatility skew** off runs the identical
+flat-vol logic as the notebook. To reproduce the exact numbers and figures in this README, run
 the original research notebook (Python 3 with `numpy`, `scipy`, `matplotlib`):
 
 ```bash

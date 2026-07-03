@@ -31,7 +31,8 @@ PRESETS = {
 # Determinism is enforced inside sim.run_monte_carlo (np.random.seed(42)).
 # ─────────────────────────────────────────────────────────────
 @st.cache_data
-def run_simulation(mu, sigma, vrp, target_delta, days, num_paths, seed=42):
+def run_simulation(mu, sigma, vrp, target_delta, days, num_paths,
+                   skew_slope, smile_curvature, seed=42):
     prices = sim.run_monte_carlo(100, mu, sigma, days, num_paths)
 
     wheel_results, bh_results = [], []
@@ -39,7 +40,9 @@ def run_simulation(mu, sigma, vrp, target_delta, days, num_paths, seed=42):
 
     for i in range(num_paths):
         iv = sim.calculate_iv(prices[:, i], vrp)
-        h_w, wv = sim.simulate_wheel(prices[:, i], iv_path=iv, target_delta=target_delta)
+        h_w, wv = sim.simulate_wheel(prices[:, i], iv_path=iv, target_delta=target_delta,
+                                     skew_slope=skew_slope,
+                                     smile_curvature=smile_curvature)
         h_b, bv = sim.simulate_bh(prices[:, i])
         wheel_results.append(wv);   wheel_histories.append(h_w)
         bh_results.append(bv);      bh_histories.append(h_b)
@@ -79,6 +82,27 @@ target_delta = st.sidebar.slider(
     value=0.30, step=0.05,
 )
 
+st.sidebar.subheader("Volatility Skew")
+use_skew = st.sidebar.checkbox(
+    "Enable volatility skew", value=True,
+    help="When off, all strikes are priced at a single flat volatility "
+         "(the original Black-Scholes assumption).",
+)
+skew_slope = st.sidebar.slider(
+    "Skew Slope", 0.00, 1.00,
+    value=0.40, step=0.05, disabled=not use_skew,
+    help="Linear term of σ(K) = σ_ATM − slope·ln(K/S) + curvature·ln(K/S)². "
+         "A positive slope makes OTM puts richer than equidistant OTM calls — "
+         "the structural skew of equity index options.",
+)
+smile_curvature = st.sidebar.slider(
+    "Smile Curvature", 0.00, 3.00,
+    value=0.50, step=0.25, disabled=not use_skew,
+    help="Quadratic term lifting both wings of the smile.",
+)
+if not use_skew:
+    skew_slope, smile_curvature = 0.0, 0.0
+
 days = preset["days"]
 
 num_paths = st.sidebar.number_input(
@@ -94,10 +118,56 @@ run = st.sidebar.button("Run Simulation", type="primary", width="stretch")
 # ─────────────────────────────────────────────────────────────
 st.title("Wheel Strategy vs Buy & Hold — Monte Carlo")
 
+
+# ─────────────────────────────────────────────────────────────
+# Section 0 — Implied volatility smile (pricing layer)
+# A pure function of the sidebar parameters, so it renders live,
+# before (and independently of) any simulation run.
+# ─────────────────────────────────────────────────────────────
+st.subheader("Implied Volatility Smile")
+
+sigma_atm = sigma + vrp   # representative ATM vol: scenario vol + risk premium
+moneyness = np.linspace(0.80, 1.20, 81)
+iv_curve  = np.array([
+    sim.skewed_vol(sigma_atm, 1.0, m, skew_slope, smile_curvature)
+    for m in moneyness
+])
+
+fig_smile = go.Figure()
+fig_smile.add_trace(go.Scatter(
+    x=moneyness, y=iv_curve * 100, mode="lines", name="Skew-adjusted IV",
+    line=dict(color="#2563EB", width=2.5),
+))
+fig_smile.add_trace(go.Scatter(
+    x=moneyness, y=np.full_like(moneyness, sigma_atm * 100), mode="lines",
+    name="Flat vol (Black-Scholes)",
+    line=dict(color="gray", width=1.5, dash="dash"),
+))
+fig_smile.add_vline(
+    x=1.0, line_dash="dot", line_color="black",
+    annotation_text="ATM", annotation_position="top",
+)
+fig_smile.update_layout(
+    xaxis_title="Moneyness (K / S)",
+    yaxis_title="Implied Volatility (%)",
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    margin=dict(t=40, b=10),
+    height=350,
+)
+st.plotly_chart(fig_smile, width="stretch")
+st.caption(
+    "Static skew in log-moneyness: σ(K) = σ_ATM − slope·ln(K/S) + curvature·ln(K/S)². "
+    "OTM puts (K < S) trade above ATM vol, matching the structural skew of equity index "
+    "options. Parameters are stylized, not calibrated to market data, and the skew affects "
+    "only the option-pricing layer — price paths are still generated at a single flat "
+    "volatility. The curve reflects the current sidebar settings (ATM vol = scenario σ + VRP)."
+)
+
 if run:
     with st.spinner(f"Running {num_paths:,} paths over {days} trading days…"):
         st.session_state["results"] = run_simulation(
-            mu, sigma, vrp, target_delta, days, num_paths
+            mu, sigma, vrp, target_delta, days, num_paths,
+            skew_slope, smile_curvature,
         )
         st.session_state["years"] = days / 252
 
@@ -211,3 +281,49 @@ fig_cdf.update_layout(
 )
 fig_cdf.update_xaxes(range=[x_min, x_max])
 st.plotly_chart(fig_cdf, width="stretch")
+
+
+# ─────────────────────────────────────────────────────────────
+# Section 4 — Portfolio value over time
+# Median path plus the 10th–90th percentile band for each strategy,
+# computed across all Monte Carlo paths at every trading day.
+# ─────────────────────────────────────────────────────────────
+st.subheader("Portfolio Value Over Time")
+
+wheel_matrix = np.vstack(wheel_histories)   # shape: (paths, days)
+bh_matrix    = np.vstack(bh_histories)
+t_axis       = np.arange(wheel_matrix.shape[1]) + sim.START_DAY
+
+fig_time = go.Figure()
+for matrix, label, line_color, band_color in [
+    (bh_matrix,    "Buy & Hold", BH_COLOR,    "rgba(147, 197, 253, 0.25)"),
+    (wheel_matrix, "Wheel",      WHEEL_COLOR, "rgba(37, 99, 235, 0.15)"),
+]:
+    p10    = np.percentile(matrix, 10, axis=0)
+    p90    = np.percentile(matrix, 90, axis=0)
+    median = np.median(matrix, axis=0)
+
+    fig_time.add_trace(go.Scatter(
+        x=t_axis, y=p90, mode="lines", line=dict(width=0),
+        showlegend=False, hoverinfo="skip",
+    ))
+    fig_time.add_trace(go.Scatter(
+        x=t_axis, y=p10, mode="lines", line=dict(width=0),
+        fill="tonexty", fillcolor=band_color, name=f"{label} 10–90%",
+    ))
+    fig_time.add_trace(go.Scatter(
+        x=t_axis, y=median, mode="lines", name=f"{label} median",
+        line=dict(color=line_color, width=2.5),
+    ))
+
+fig_time.add_hline(
+    y=INITIAL_CAPITAL, line_dash="dash", line_color="black",
+    annotation_text="Initial Capital", annotation_position="bottom right",
+)
+fig_time.update_layout(
+    xaxis_title="Trading Day",
+    yaxis_title="Portfolio Value ($)",
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    margin=dict(t=40, b=10),
+)
+st.plotly_chart(fig_time, width="stretch")
